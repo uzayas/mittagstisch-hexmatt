@@ -48,6 +48,47 @@ create table if not exists public.closed_days (
   created_at  timestamptz not null default now()
 );
 
+-- Registrierungscodes: ein Code pro Stelle. Für die App NICHT lesbar (RLS ohne Policies).
+create table if not exists public.registration_codes (
+  role       text primary key check (role in ('schule', 'tischli')),
+  code       text not null unique check (length(code) >= 8),
+  updated_at timestamptz not null default now()
+);
+
+-- ---------- Selbstregistrierung: Code prüfen und Rolle zuweisen ----------
+-- Läuft bei jeder neuen Registrierung. Falscher Code → Registrierung wird abgebrochen,
+-- es entsteht kein Konto. Ohne Code (z.B. Benutzer im Dashboard angelegt) entsteht ein
+-- Konto OHNE Rolle – dieses sieht keine Daten, bis eine Rolle zugewiesen wird.
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql security definer
+set search_path = public
+as $$
+declare
+  v_code text := nullif(trim(coalesce(new.raw_user_meta_data ->> 'reg_code', '')), '');
+  v_role text;
+begin
+  if v_code is null then
+    return new;
+  end if;
+
+  select role into v_role from public.registration_codes where code = v_code;
+  if v_role is null then
+    raise exception 'INVALID_REGISTRATION_CODE';
+  end if;
+
+  insert into public.profiles (id, role, display_name)
+  values (new.id, v_role, nullif(trim(new.raw_user_meta_data ->> 'display_name'), ''))
+  on conflict (id) do nothing;
+
+  return new;
+end $$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function public.handle_new_user();
+
 -- ---------- updated_at automatisch setzen ----------
 create or replace function public.set_updated_at()
 returns trigger language plpgsql as $$
@@ -78,6 +119,9 @@ alter table public.profiles    enable row level security;
 alter table public.students    enable row level security;
 alter table public.absences    enable row level security;
 alter table public.closed_days enable row level security;
+alter table public.registration_codes enable row level security;
+-- registration_codes: absichtlich KEINE Policies → weder lesbar noch änderbar über die App
+revoke all on public.registration_codes from anon, authenticated;
 
 -- profiles: jede/r sieht nur das eigene Profil (Rollen werden nur im Dashboard vergeben)
 drop policy if exists profiles_select_own on public.profiles;
