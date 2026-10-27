@@ -10,8 +10,8 @@
 // ============================================================
 
 window.APP_CONFIG = {
-  SUPABASE_URL: "",
-  SUPABASE_ANON_KEY: "",
+  SUPABASE_URL: "https://rhdgsjffbumreselepmt.supabase.co",
+  SUPABASE_ANON_KEY: "sb_publishable_9Myuc2jNiMM7k7xau6IfyA_R3ya6f94",
 
   TITLE: "Mittagstisch Sekundarschule Pratteln",
 
