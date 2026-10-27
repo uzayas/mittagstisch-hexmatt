@@ -10,8 +10,8 @@
 // ============================================================
 
 window.APP_CONFIG = {
-  SUPABASE_URL: "https://rhdgsjffbumreselepmt.supabase.co",
-  SUPABASE_ANON_KEY: "sb_publishable_9Myuc2jNiMM7k7xau6IfyA_R3ya6f94",
+  SUPABASE_URL: "",
+  SUPABASE_ANON_KEY: "",
 
   TITLE: "Mittagstisch Sekundarschule Pratteln",
 
@@ -21,6 +21,15 @@ window.APP_CONFIG = {
   // Standard-Anmeldetage für neue Schüler/innen
   DEFAULT_DAYS: [1, 2, 4, 5],
 
+  // ---------- Automatisches Logout ----------
+  // Abmeldung nach so vielen Minuten ohne Aktivität (0 = aus). 1 Minute vorher erscheint eine Warnung.
+  IDLE_TIMEOUT_MINUTES: 30,
+  // Spätestens nach so vielen Stunden wird man abgemeldet, auch bei Aktivität (0 = aus).
+  MAX_SESSION_HOURS: 10,
+  // false = Login gilt nur im offenen Tab; Tab/Browser schliessen = abgemeldet.
+  // true  = Login bleibt nach dem Schliessen des Browsers erhalten (bis Timeout/Logout).
+  REMEMBER_LOGIN: false,
+
   // Schnellauswahl für die Bemerkungsspalte (werden auch in der Tageszählung ausgewertet)
-  REMARK_PRESETS: ["vegetarisch", "vegan", "ohne Schweinefleisch", "laktosefrei", "glutenfrei", "Nussallergie"]
+  REMARK_PRESETS: ["vegetarisch", "vegan", "ohne Schweinefleisch", "laktosefrei", "glutenfrei"]
 };

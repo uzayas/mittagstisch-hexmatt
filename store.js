@@ -5,7 +5,25 @@
 
 function createSupabaseStore(cfg) {
   if (!window.supabase) throw new Error("Supabase-Bibliothek konnte nicht geladen werden (Internetverbindung?).");
-  const sb = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
+  // Wo das Login gespeichert wird: sessionStorage = nur solange der Tab offen ist
+  const persist = cfg.REMEMBER_LOGIN === true;
+  const area = () => (persist ? window.localStorage : window.sessionStorage);
+  const authStorage = {
+    getItem(k) { try { return area().getItem(k); } catch (e) { return null; } },
+    setItem(k, v) { try { area().setItem(k, v); } catch (e) { /* ignorieren */ } },
+    removeItem(k) { try { area().removeItem(k); } catch (e) { /* ignorieren */ } }
+  };
+  // Dauerhafte Logins einer früheren Version entfernen
+  if (!persist) {
+    try {
+      Object.keys(localStorage)
+        .filter((k) => /^sb-.*-auth-token/.test(k))
+        .forEach((k) => localStorage.removeItem(k));
+    } catch (e) { /* ignorieren */ }
+  }
+  const sb = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY, {
+    auth: { storage: authStorage, persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+  });
   const chk = ({ data, error }) => { if (error) throw error; return data; };
   let channel = null;
 

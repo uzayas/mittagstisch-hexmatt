@@ -141,13 +141,131 @@
     return out;
   }
 
+  // ---------- Automatisches Logout ----------
+  const SESS_KEY = "mittagstisch-session";
+  const IDLE_MS = Math.max(0, Number(cfg.IDLE_TIMEOUT_MINUTES ?? 30)) * 60000;
+  const MAX_MS = Math.max(0, Number(cfg.MAX_SESSION_HOURS ?? 10)) * 3600000;
+  const WARN_MS = Math.min(60000, IDLE_MS / 2);
+  const CHECK_MS = Math.min(10000, Math.max(1000, IDLE_MS / 10 || 10000));
+  const ACT_EVENTS = ["pointerdown", "keydown", "wheel", "touchstart", "mousemove"];
+
+  const sessGet = () => { try { return JSON.parse(sessionStorage.getItem(SESS_KEY)) || {}; } catch (e) { return {}; } };
+  const sessSet = (v) => { try { sessionStorage.setItem(SESS_KEY, JSON.stringify(v)); } catch (e) { /* ignorieren */ } };
+  const sessClear = () => { try { sessionStorage.removeItem(SESS_KEY); } catch (e) { /* ignorieren */ } };
+  const markLogin = () => { const n = Date.now(); sessSet({ loginAt: n, lastActivity: n }); };
+
+  let idleTimer = null, warnTimer = null, $warn = null;
+  let loginAt = Date.now(), lastActivity = Date.now();
+
+  const fmtDur = (ms) => {
+    const min = Math.round(ms / 60000);
+    if (min < 60) return `${min} Minute${min === 1 ? "" : "n"}`;
+    const h = Math.round(min / 6) / 10;
+    return `${String(h).replace(".", ",")} Stunde${h === 1 ? "" : "n"}`;
+  };
+
+  function onActivity(e) {
+    // Während die Warnung offen ist, zählen nur die Knöpfe (kein Wegklicken durch Mausbewegung)
+    if ($warn && e) return;
+    const n = Date.now();
+    if (!$warn && n - lastActivity < 5000) return; // nicht bei jeder Mausbewegung speichern
+    lastActivity = n;
+    const s = sessGet(); s.lastActivity = n; sessSet(s);
+    hideWarn();
+  }
+
+  // gibt true zurück, wenn abgemeldet wurde
+  function checkIdle() {
+    if (!S.profile) return false;
+    const n = Date.now();
+    if (MAX_MS && n - loginAt >= MAX_MS) {
+      doLogout(`Sie wurden nach ${fmtDur(MAX_MS)} automatisch abgemeldet. Bitte erneut anmelden.`);
+      return true;
+    }
+    if (IDLE_MS) {
+      const idle = n - lastActivity;
+      if (idle >= IDLE_MS) {
+        doLogout(`Sie wurden nach ${fmtDur(IDLE_MS)} ohne Aktivität automatisch abgemeldet.`);
+        return true;
+      }
+      if (idle >= IDLE_MS - WARN_MS) showWarn();
+    }
+    return false;
+  }
+
+  function startIdleWatch() {
+    stopIdleWatch();
+    const s = sessGet(), n = Date.now();
+    if (!s.loginAt) { s.loginAt = n; s.lastActivity = n; sessSet(s); }
+    loginAt = s.loginAt;
+    lastActivity = s.lastActivity || n;
+    if (checkIdle()) return false; // z.B. Seite nach langer Pause neu geladen
+    if (!IDLE_MS && !MAX_MS) return true;
+    ACT_EVENTS.forEach((e) => window.addEventListener(e, onActivity, { passive: true }));
+    document.addEventListener("visibilitychange", checkIdle); // z.B. nach Standby des Laptops sofort prüfen
+    idleTimer = setInterval(checkIdle, CHECK_MS);
+    return true;
+  }
+
+  function stopIdleWatch() {
+    clearInterval(idleTimer); idleTimer = null;
+    ACT_EVENTS.forEach((e) => window.removeEventListener(e, onActivity));
+    document.removeEventListener("visibilitychange", checkIdle);
+    hideWarn();
+  }
+
+  function showWarn() {
+    if ($warn) return;
+    $warn = document.createElement("dialog");
+    $warn.className = "idle-warn";
+    $warn.innerHTML = `
+      <div class="modal-inner">
+        <h3>Noch da?</h3>
+        <p>Sie werden in <strong id="idleSec"></strong> Sekunden automatisch abgemeldet.</p>
+        <div class="row-actions">
+          <button class="btn ghost" id="idleOut">Jetzt abmelden</button>
+          <button class="btn primary" id="idleStay">Angemeldet bleiben</button>
+        </div>
+      </div>`;
+    document.body.appendChild($warn);
+    $warn.addEventListener("cancel", (ev) => { ev.preventDefault(); onActivity(); }); // Esc = bleiben
+    $warn.querySelector("#idleStay").onclick = () => onActivity();
+    $warn.querySelector("#idleOut").onclick = () => doLogout("Sie wurden abgemeldet.");
+    const upd = () => {
+      const left = Math.max(0, Math.ceil((IDLE_MS - (Date.now() - lastActivity)) / 1000));
+      const el = $warn && $warn.querySelector("#idleSec");
+      if (el) el.textContent = left;
+      if (left <= 0) checkIdle();
+    };
+    upd();
+    warnTimer = setInterval(upd, 1000);
+    try { $warn.showModal(); } catch (e) { $warn.setAttribute("open", ""); }
+    $warn.querySelector("#idleStay").focus();
+  }
+
+  function hideWarn() {
+    clearInterval(warnTimer); warnTimer = null;
+    if ($warn) { try { $warn.close(); } catch (e) { /* ignorieren */ } $warn.remove(); $warn = null; }
+  }
+
+  async function doLogout(info = "") {
+    stopIdleWatch();
+    sessClear();
+    closeModal();
+    $print.innerHTML = "";
+    S.profile = null;
+    try { await store.signOut(); } catch (e) { console.error(e); }
+    renderLogin("", "login", info);
+  }
+
   // ---------- Start ----------
   async function init() {
     try {
       const session = await store.getSession();
-      if (!session) return renderLogin();
+      if (!session) { sessClear(); return renderLogin(); }
       S.profile = await store.getProfile();
       if (!S.profile) return renderNoProfile();
+      if (!startIdleWatch()) return;
       renderShell();
       await reload();
       store.subscribe(debounce(() => reload(), 400));
@@ -166,6 +284,7 @@
           <div class="login-logo" aria-hidden="true">🍽️</div>
           <h1>${esc(cfg.TITLE)}</h1>
           <p class="muted">Gemeinsamer Kalender für die Schule / Lerninsel und «Es Tischli für Alli».</p>
+          ${info ? `<p class="info-text" role="status">${esc(info)}</p>` : ""}
           ${store.demo ? `
             <div class="note">
               <strong>Demo-Modus</strong> – Daten werden nur in diesem Browser gespeichert.
@@ -179,7 +298,6 @@
               <button type="button" role="tab" class="tab ${reg ? "" : "active"}" aria-selected="${!reg}" data-mode="login">Anmelden</button>
               <button type="button" role="tab" class="tab ${reg ? "active" : ""}" aria-selected="${reg}" data-mode="register">Registrieren</button>
             </div>
-            ${info ? `<p class="info-text">${esc(info)}</p>` : ""}
             ${reg ? `
             <form id="regForm" class="stack">
               <label>Vor- und Nachname<input name="display_name" required maxlength="80" autocomplete="name"></label>
@@ -204,7 +322,7 @@
       </main>`;
 
     $app.querySelectorAll("[data-demo-role]").forEach((b) =>
-      b.addEventListener("click", async () => { await store.signIn(b.dataset.demoRole); init(); }));
+      b.addEventListener("click", async () => { await store.signIn(b.dataset.demoRole); markLogin(); init(); }));
     $app.querySelectorAll("[data-mode]").forEach((b) =>
       b.addEventListener("click", () => renderLogin("", b.dataset.mode)));
 
@@ -215,6 +333,7 @@
       btn.disabled = true; btn.textContent = "Anmelden …";
       try {
         await store.signIn(form.email.value.trim(), form.password.value);
+        markLogin();
         await init();
       } catch (err) {
         renderLogin(errMsg(err), "login");
@@ -247,6 +366,7 @@
           renderLogin("", "login",
             `Fast geschafft! Wir haben eine Bestätigungs-E-Mail an ${vals.email} gesendet. Bitte den Link darin anklicken und sich danach hier anmelden.`);
         } else {
+          markLogin();
           await init();
         }
       } catch (err) {
@@ -264,7 +384,7 @@
         Bitte die verantwortliche Person kontaktieren.</p>
         <button class="btn" id="logout">Logout</button>
       </div></main>`;
-    document.getElementById("logout").onclick = async () => { await store.signOut(); renderLogin(); };
+    document.getElementById("logout").onclick = () => doLogout();
   }
 
   // ---------- Hauptansicht ----------
@@ -313,7 +433,7 @@
       <p class="hint">Feld anklicken = für diesen Tag ab- oder wieder anmelden · Tag anklicken = Tagesliste drucken oder Tag schliessen · Name anklicken = Schüler/in bearbeiten</p>`;
 
     const $ = (id) => document.getElementById(id);
-    $("logout").onclick = async () => { await store.signOut(); S.profile = null; renderLogin(); };
+    $("logout").onclick = () => doLogout("Sie wurden abgemeldet.");
     $("prev").onclick = () => { S.weekStart = addDays(S.weekStart, -7); reload(); };
     $("next").onclick = () => { S.weekStart = addDays(S.weekStart, 7); reload(); };
     $("today").onclick = () => { S.weekStart = mondayOf(new Date()); reload(); };
