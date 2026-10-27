@@ -22,5 +22,5 @@ window.APP_CONFIG = {
   DEFAULT_DAYS: [1, 2, 4, 5],
 
   // Schnellauswahl für die Bemerkungsspalte (werden auch in der Tageszählung ausgewertet)
-  REMARK_PRESETS: ["vegetarisch", "vegan", "ohne Schweinefleisch", "laktosefrei", "glutenfrei"]
+  REMARK_PRESETS: ["vegetarisch", "vegan", "ohne Schweinefleisch", "laktosefrei", "glutenfrei", "Nussallergie"]
 };
