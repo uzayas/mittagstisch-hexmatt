@@ -127,6 +127,19 @@ In `config.js`:
 - `DEFAULT_DAYS` – vorausgewählte Anmeldetage für neue Schüler/innen
 - `REMARK_PRESETS` – Schnellauswahl der Bemerkungen (werden auch in der Tageszählung ausgewertet)
 
+### Automatisches Logout
+
+| Einstellung | Standard | Wirkung |
+|---|---|---|
+| `IDLE_TIMEOUT_MINUTES` | `30` | Abmeldung nach so vielen Minuten ohne Aktivität. 1 Minute vorher erscheint «Noch da?» mit Countdown. `0` = aus |
+| `MAX_SESSION_HOURS` | `10` | Spätestens nach dieser Zeit neu anmelden, auch bei Aktivität. `0` = aus |
+| `REMEMBER_LOGIN` | `false` | `false`: Login gilt nur im offenen Tab – Tab oder Browser schliessen = abgemeldet. Jeder neue Tab verlangt ein Login. |
+
+Hinweise:
+- Nach Standby des Laptops wird sofort geprüft; war die Zeit abgelaufen, ist man abgemeldet.
+- Wenn Chrome/Edge so eingestellt ist, dass beim Start die letzten Tabs wiederhergestellt werden, kann ein Tab-Login den Neustart überleben. Dann greifen trotzdem der Inaktivitäts-Timeout und die Höchstdauer.
+- Zusätzlich serverseitig (kostenpflichtige Supabase-Pläne): **Authentication → Sessions** → «Time-box user sessions» / «Inactivity timeout».
+
 ## Wichtige Hinweise
 
 - **Datenschutz:** Es werden Personendaten von Schüler/innen gespeichert. Den Einsatz vorgängig mit der Schulleitung bzw. der zuständigen Stelle für Datenschutz abklären. Nur nötige Angaben in die Bemerkung schreiben. Im GitHub-Repository liegen **keine** Schülerdaten – diese sind nur in Supabase.
